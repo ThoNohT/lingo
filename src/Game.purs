@@ -26,8 +26,8 @@ import Halogen.HTML (ClassName(..))
 import Halogen.HTML as HH
 import Halogen.HTML.Properties as HA
 
-initialState :: State
-initialState =
+initialState :: String -> State
+initialState _ =
   Guessing
     { previousAttempts: Nil
     , currentAttempt: ""

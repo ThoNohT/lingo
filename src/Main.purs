@@ -1,17 +1,21 @@
 module Main (main) where
 
 import Prelude
-
+import Affjax (get, printError) as Affjax
+import Affjax.ResponseFormat (string) as ResponseFormat
 import Control.Monad.State as ST
 import Core (ignoreM)
+import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
 import Game as G
 import Halogen as H
 import Halogen.Aff (awaitBody, runHalogenAff)
 import Halogen.Query.Event (eventListener)
 import Halogen.VDom.Driver (runUI)
+import Halogen.HTML (text) as HH
 import Web.Event.Event as E
 import Web.HTML (window) as Web
 import Web.HTML.HTMLDocument as HTMLDocument
@@ -31,26 +35,47 @@ type Slots :: forall k. Row k
 type Slots
   = ()
 
+data State
+  = Loading
+  | Loaded G.State
+  | Error String
+
 data Action
   = Init
   | KeyPressed KeyboardEvent
 
-handleAction :: forall m. MonadEffect m => Action -> H.HalogenM G.State Action Slots Output m Unit
-handleAction action = case action of
-  Init -> do
-    document <- liftEffect (map HTMLDocument.toEventTarget $ Web.document =<< Web.window)
-    ignoreM $ H.subscribe $ eventListener KET.keydown document (map KeyPressed <<< KE.fromEvent)
-  KeyPressed ev -> do
-    liftEffect $ E.preventDefault (KE.toEvent ev)
-    s <- ST.get
-    s' <- liftEffect $ G.handleKey (KE.key ev) s
-    ST.put s'
+handleAction :: forall m. MonadAff m => Action -> H.HalogenM State Action Slots Output m Unit
+handleAction action = do
+  s <- ST.get
+  case s of
+    Loading -> case action of
+      Init -> do
+        document <- liftEffect (map HTMLDocument.toEventTarget $ Web.document =<< Web.window)
+        ignoreM $ H.subscribe $ eventListener KET.keydown document (map KeyPressed <<< KE.fromEvent)
+        dict <- liftAff $ Affjax.get ResponseFormat.string "dict/english.txt"
+        case dict of
+          Left error -> ST.put $ Error $ Affjax.printError error
+          Right response -> ST.put $ Loaded $ G.initialState response.body
+      _ -> pure unit
+    Loaded gameState -> case action of
+      KeyPressed ev -> do
+        liftEffect $ E.preventDefault (KE.toEvent ev)
+        gameState' <- liftEffect $ G.handleKey (KE.key ev) gameState
+        ST.put $ Loaded gameState'
+      _ -> pure unit
+    Error _ -> pure unit
 
-component :: forall query m. MonadEffect m => H.Component query Input Output m
+render :: forall m. State -> H.ComponentHTML Action Slots m
+render st = case st of
+  Loading -> HH.text ""
+  Loaded s -> G.render s
+  Error e -> HH.text e
+
+component :: forall query m. MonadAff m => H.Component query Input Output m
 component =
   H.mkComponent
-    { initialState: const G.initialState
-    , render: G.render
+    { initialState: const Loading
+    , render: render
     , eval: H.mkEval $ H.defaultEval { handleAction = handleAction, initialize = Just Init }
     }
 
