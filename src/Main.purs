@@ -55,7 +55,9 @@ handleAction action = do
         dict <- liftAff $ Affjax.get ResponseFormat.string "dict/english.txt"
         case dict of
           Left error -> ST.put $ Error $ Affjax.printError error
-          Right response -> ST.put $ Loaded $ G.initialState response.body
+          Right response -> do
+            gameState <- liftEffect $ G.initialState response.body
+            ST.put $ Loaded gameState
       _ -> pure unit
     Loaded gameState -> case action of
       KeyPressed ev -> do
