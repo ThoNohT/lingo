@@ -115,7 +115,6 @@ validateWord answer =
   in
     wordToString >>> String.toCharArray >>> zip (0 .. wordLength) >>> map validateLetter
 
--- TODO: Make previousAttempts a list of some type indicating whether it is correct, or wrong place, or incorrect.
 type GuessingState
   = { previousAttempts :: Array Word
     , currentAttempt :: Word
