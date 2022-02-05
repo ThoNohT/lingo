@@ -1,16 +1,10 @@
-module Game
-  ( State
-  , handleKey
-  , initialState
-  , render
-  ) where
+module Game (State, handleKey, initialState, render) where
 
 import Prelude
 import Core (filterMaybe)
-import Data.Array as Array
+import Data.Array (filter, length, fromFoldable, replicate, reverse, mapMaybe) as Array
+import Data.Array ((!!), (..), (:))
 import Data.Char (fromCharCode, toCharCode)
-import Data.List (List(..), (!!), (..), (:))
-import Data.List (fromFoldable, length, mapMaybe, reverse) as List
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set (fromFoldable, member) as Set
@@ -36,18 +30,17 @@ nAttempts = 6
 wordLength :: Int
 wordLength = 5
 
-buildDictionary :: String -> List String
+buildDictionary :: String -> Array String
 buildDictionary =
   String.split (Pattern "\n")
     >>> map (String.dropRight 1)
     >>> Array.filter (\w -> String.length w == wordLength)
     >>> map toUpper
-    >>> List.fromFoldable
 
-getRandomWord :: List String -> Effect (Maybe String)
+getRandomWord :: Array String -> Effect (Maybe String)
 getRandomWord words = do
   let
-    max = List.length words
+    max = Array.length words
   idx <- Random.randomInt 0 max
   pure $ words !! idx
 
@@ -60,7 +53,7 @@ initialState dict = do
     Just a ->
       pure
         $ Guessing
-            { previousAttempts: Nil
+            { previousAttempts: []
             , currentAttempt: ""
             , answer: a
             , allWords: Set.fromFoldable words
@@ -82,7 +75,7 @@ data State
 
 -- TODO: Make previousAttempts a list of some type indicating whether it is correct, or wrong place, or incorrect.
 type GuessingState
-  = { previousAttempts :: List String
+  = { previousAttempts :: Array String
     , currentAttempt :: String
     , answer :: String
     , allWords :: Set String
@@ -94,7 +87,7 @@ currentAttemptComplete :: GuessingState -> Boolean
 currentAttemptComplete s = String.length s.currentAttempt == wordLength
 
 type FinishedState
-  = { attempts :: List String, answer :: String, success :: Boolean }
+  = { attempts :: Array String, answer :: String, success :: Boolean }
 
 data Action'
   = InputLetter Char
@@ -110,7 +103,7 @@ keyToAction key = case filterMaybe (flip Set.member letters) (String.toChar $ to
     "Backspace" -> Just Backspace
     _ -> Nothing
   where
-  letters = Set.fromFoldable $ List.mapMaybe fromCharCode $ toCharCode 'A' .. toCharCode 'Z'
+  letters = Set.fromFoldable $ Array.mapMaybe fromCharCode $ toCharCode 'A' .. toCharCode 'Z'
 
 submitWord :: GuessingState -> Effect State
 submitWord s =
@@ -122,7 +115,7 @@ submitWord s =
     -- Correct guess.
     Console.log "Correct."
     pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: true }
-  else if List.length s.previousAttempts == nAttempts - 1 then do
+  else if Array.length s.previousAttempts == nAttempts - 1 then do
     -- Game failed.
     Console.log "Failed."
     pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: false }
@@ -180,11 +173,12 @@ render state =
     Guessing s ->
       let
         messageRow = Array.fromFoldable $ map (\m -> row [ alert "warning" m ]) s.message
-        attemptRows = Array.fromFoldable $ map (\a -> row [ wordRow a ]) $ List.reverse s.previousAttempts
+
+        attemptRows = map (\a -> row [ wordRow a ]) $ Array.reverse s.previousAttempts
 
         guessRow = [ row [ wordRow s.currentAttempt ] ]
 
-        blankRows = map (\a -> row [ wordRow a ]) $ Array.replicate (nAttempts - List.length s.previousAttempts - 1) ""
+        blankRows = map (\a -> row [ wordRow a ]) $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) ""
       in
         messageRow <> attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
     Finished s
