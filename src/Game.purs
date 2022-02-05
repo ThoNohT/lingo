@@ -145,7 +145,7 @@ row = HH.div [ HA.class_ $ ClassName "d-flex p-1 flex-fill justify-content-cente
 wordBlock :: forall a m. Char -> GameHtml a m
 wordBlock letter =
   HH.div
-    [ HA.class_ $ ClassName "border mx-2 text-center align-middle"
+    [ HA.class_ $ ClassName "border mx-2 text-center align-middle fs-2"
     , HA.style "width: 50px; min-width: 50px; max-width: 50px; height: 50px; min-height: 50px; max-height: 50px"
     ]
     [ HH.text $ String.singleton letter ]
@@ -165,7 +165,7 @@ alert alertType msg = HH.div [ HA.class_ $ ClassName $ "alert alert-" <> alertTy
 render :: forall a m. State -> GameHtml a m
 render state =
   HH.div
-    [ HA.class_ $ ClassName "d-flex p-2 bd-highlight flex-fill flex-column fs-2" ]
+    [ HA.class_ $ ClassName "d-flex p-2 bd-highlight flex-fill flex-column" ]
     ([ row [ HH.h1_ [ HH.text "LINGO" ] ] ] <> contents)
   where
   contents = case state of
