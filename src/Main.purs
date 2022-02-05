@@ -63,7 +63,7 @@ handleAction action = do
       KeyPressed ev -> do
         let
           key = KE.key ev
-        if key /= "F5" && not (KE.shiftKey ev) && not (KE.ctrlKey ev) && not (KE.altKey ev) then do
+        if key /= "F5" && not (KE.ctrlKey ev) && not (KE.altKey ev) then do
           liftEffect $ E.preventDefault (KE.toEvent ev)
           gameState' <- liftEffect $ G.handleKey (KE.key ev) gameState
           ST.put $ Loaded gameState'
