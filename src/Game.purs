@@ -259,7 +259,21 @@ render state =
             $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) []
       in
         messageRow <> attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
-    Finished s
-      | s.success -> [ row [ HH.text "Success." ] ]
-    Finished _ -> [ row [ HH.text "Failed." ] ]
+    Finished s ->
+      let
+        messageRow =
+          if s.success then
+            [ row [ alert "success" "Success!" ] ]
+          else
+            [ row [ alert "danger" "Failed!" ] ]
+
+        attemptRows = map (\a -> row [ wordRow a ]) $ Array.reverse s.attempts
+
+        blankRows =
+          map (\a -> row [ wordRow a ])
+            $ Array.replicate (nAttempts - Array.length s.attempts) []
+
+        answerRow = [ row [ alert "primary" $ "The answer was '" <> s.answer <> ".'" ] ]
+      in
+        messageRow <> attemptRows <> blankRows <> answerRow
     NoWords -> [ row [ alert "danger" "No words found." ] ]
