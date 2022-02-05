@@ -1,17 +1,18 @@
 module Game (State, handleKey, initialState, render) where
 
 import Prelude
-import Core (filterMaybe)
-import Data.Array ((!!), (..), (:))
-import Data.Array (dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse) as Array
+import Core (filterMaybe, indexesOf)
+import Data.Array (dropEnd, filter, fromFoldable, length, mapMaybe, null, replicate, reverse) as Array
+import Data.Array (zip, (!!), (..), (:))
 import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (elem)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set (fromFoldable, member) as Set
 import Data.String (Pattern(..), toUpper)
-import Data.String.CodeUnits (dropRight, fromCharArray, length, singleton, toChar) as String
+import Data.String.CodeUnits (dropRight, fromCharArray, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Random as Random
 import Halogen as H
@@ -93,8 +94,26 @@ entryToChar entry = case entry of
 type Word
   = Array Entry
 
+{- Convert a word to a string, returning the characters of all entries that represent a character. -}
 wordToString :: Word -> String
 wordToString = Array.mapMaybe entryToChar >>> String.fromCharArray
+
+{- Validates the provided word against the provided string. -}
+validateWord :: String -> Word -> Word
+validateWord answer =
+  let
+    validateLetter (Tuple index char) =
+      let
+        indexes = indexesOf char answer
+      in
+        if elem index indexes then
+          Correct char
+        else if not $ Array.null indexes then
+          WrongPlace char
+        else
+          Incorrect char
+  in
+    wordToString >>> String.toCharArray >>> zip (1 .. wordLength) >>> map validateLetter
 
 -- TODO: Make previousAttempts a list of some type indicating whether it is correct, or wrong place, or incorrect.
 type GuessingState
@@ -132,19 +151,45 @@ submitWord :: GuessingState -> Effect State
 submitWord s =
   if not $ Set.member (wordToString s.currentAttempt) s.allWords then do
     -- Invalid word.
-    pure $ Guessing s { currentAttempt = [], message = Just $ "'" <> wordToString s.currentAttempt <> "' is not a valid word." }
+    pure
+      $ Guessing
+          s
+            { currentAttempt = []
+            , message = Just $ "'" <> wordToString s.currentAttempt <> "' is not a valid word."
+            }
   else if elem s.currentAttempt s.previousAttempts then do
     -- Repeated guess.
-    pure $ Guessing s { currentAttempt = [], message = Just $ "'" <> wordToString s.currentAttempt <> "' has previously been guessed." }
+    pure
+      $ Guessing
+          s
+            { currentAttempt = []
+            , message = Just $ "'" <> wordToString s.currentAttempt <> "' has previously been guessed."
+            }
   else if wordToString s.currentAttempt == s.answer then do
     -- Correct guess.
-    pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: true }
+    pure
+      $ Finished
+          { attempts: validateWord s.answer s.currentAttempt : s.previousAttempts
+          , answer: s.answer
+          , success: true
+          }
   else if Array.length s.previousAttempts == nAttempts - 1 then do
     -- Game failed.
-    pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: false }
+    pure
+      $ Finished
+          { attempts: validateWord s.answer s.currentAttempt : s.previousAttempts
+          , answer: s.answer
+          , success: false
+          }
   else do
     -- Next attempt.
-    pure $ Guessing s { previousAttempts = s.currentAttempt : s.previousAttempts, currentAttempt = [], message = Nothing }
+    pure
+      $ Guessing
+          s
+            { previousAttempts = validateWord s.answer s.currentAttempt : s.previousAttempts
+            , currentAttempt = []
+            , message = Nothing
+            }
 
 handleKey :: String -> State -> Effect State
 handleKey key state = case state of
@@ -165,20 +210,29 @@ type GameHtml a m
 row :: forall a m. Array (GameHtml a m) -> GameHtml a m
 row = HH.div [ HA.class_ $ ClassName "d-flex p-1 flex-fill justify-content-center" ]
 
-wordBlock :: forall a m. Char -> GameHtml a m
-wordBlock letter =
-  HH.div
-    [ HA.class_ $ ClassName "border mx-2 text-center align-middle fs-2"
-    , HA.style "width: 50px; min-width: 50px; max-width: 50px; height: 50px; min-height: 50px; max-height: 50px"
-    ]
-    [ HH.text $ String.singleton letter ]
+wordBlock :: forall a m. Entry -> GameHtml a m
+wordBlock entry =
+  let
+    letter = maybe ' ' identity $ entryToChar entry
+
+    entryStyle = case entry of
+      Correct _ -> "green"
+      WrongPlace _ -> "yellow"
+      Incorrect _ -> "gray"
+      _ -> "white"
+  in
+    HH.div
+      [ HA.class_ $ ClassName "border mx-2 text-center align-middle fs-2"
+      , HA.style $ "width: 50px; min-width: 50px; max-width: 50px; "
+          <> "height: 50px; min-height: 50px; max-height: 50px; background-color: "
+          <> entryStyle
+      ]
+      [ HH.text $ String.singleton letter ]
 
 wordRow :: forall a m. Word -> GameHtml a m
 wordRow word =
   let
-    letters = Array.mapMaybe entryToChar word
-
-    allBlocks = letters <> (Array.replicate (wordLength - Array.length letters) ' ')
+    allBlocks = word <> (Array.replicate (wordLength - Array.length word) Empty)
   in
     HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (map wordBlock allBlocks)
 
