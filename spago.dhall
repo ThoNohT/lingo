@@ -3,6 +3,7 @@
   [ "aff"
   , "affjax"
   , "arrays"
+  , "tuples"
   , "effect"
   , "either"
   , "halogen"
