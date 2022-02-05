@@ -3,18 +3,15 @@ module Game (State, handleKey, initialState, render) where
 import Prelude
 import Core (filterMaybe)
 import Data.Array ((!!), (..), (:))
-import Data.Array (filter, length, fromFoldable, replicate, reverse, mapMaybe) as Array
+import Data.Array (dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse) as Array
 import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (elem)
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set (fromFoldable, member) as Set
 import Data.String (Pattern(..), toUpper)
-import Data.String (codePointFromChar) as String
-import Data.String.CodeUnits (dropRight, length, singleton, toChar, toCharArray) as String
+import Data.String.CodeUnits (dropRight, fromCharArray, length, singleton, toChar) as String
 import Data.String.Common (split) as String
-import Data.String.NonEmpty (toString) as String
-import Data.String.NonEmpty.CodePoints (snoc) as String
 import Effect (Effect)
 import Effect.Random as Random
 import Halogen as H
@@ -54,7 +51,7 @@ initialState dict = do
       pure
         $ Guessing
             { previousAttempts: []
-            , currentAttempt: ""
+            , currentAttempt: []
             , answer: a
             , allWords: Set.fromFoldable words
             , message: Nothing
@@ -73,10 +70,36 @@ data State
   | Finished FinishedState
   | NoWords
 
+{- An entry in a word. -}
+data Entry
+  = Correct Char
+  | WrongPlace Char
+  | Incorrect Char
+  | NotEvaluated Char
+  | Empty
+
+derive instance eqEntry :: Eq Entry
+
+{- Extract the character from an entry, if there is one. -}
+entryToChar :: Entry -> Maybe Char
+entryToChar entry = case entry of
+  Correct c -> Just c
+  WrongPlace c -> Just c
+  Incorrect c -> Just c
+  NotEvaluated c -> Just c
+  Empty -> Nothing
+
+{- A word in the list of guesses. -}
+type Word
+  = Array Entry
+
+wordToString :: Word -> String
+wordToString = Array.mapMaybe entryToChar >>> String.fromCharArray
+
 -- TODO: Make previousAttempts a list of some type indicating whether it is correct, or wrong place, or incorrect.
 type GuessingState
-  = { previousAttempts :: Array String
-    , currentAttempt :: String
+  = { previousAttempts :: Array Word
+    , currentAttempt :: Word
     , answer :: String
     , allWords :: Set String
     , message :: Maybe String
@@ -84,10 +107,10 @@ type GuessingState
 
 {- Indicates whether the current attempt is ready to be submitted. -}
 currentAttemptComplete :: GuessingState -> Boolean
-currentAttemptComplete s = String.length s.currentAttempt == wordLength
+currentAttemptComplete s = Array.length s.currentAttempt == wordLength
 
 type FinishedState
-  = { attempts :: Array String, answer :: String, success :: Boolean }
+  = { attempts :: Array Word, answer :: String, success :: Boolean }
 
 data Action'
   = InputLetter Char
@@ -107,13 +130,13 @@ keyToAction key = case filterMaybe (flip Set.member letters) (String.toChar $ to
 
 submitWord :: GuessingState -> Effect State
 submitWord s =
-  if not $ Set.member s.currentAttempt s.allWords then do
+  if not $ Set.member (wordToString s.currentAttempt) s.allWords then do
     -- Invalid word.
-    pure $ Guessing s { currentAttempt = "", message = Just $ "'" <> s.currentAttempt <> "' is not a valid word." }
+    pure $ Guessing s { currentAttempt = [], message = Just $ "'" <> wordToString s.currentAttempt <> "' is not a valid word." }
   else if elem s.currentAttempt s.previousAttempts then do
     -- Repeated guess.
-    pure $ Guessing s { currentAttempt = "", message = Just $ "'" <> s.currentAttempt <> "' has previously been guessed." }
-  else if s.currentAttempt == s.answer then do
+    pure $ Guessing s { currentAttempt = [], message = Just $ "'" <> wordToString s.currentAttempt <> "' has previously been guessed." }
+  else if wordToString s.currentAttempt == s.answer then do
     -- Correct guess.
     pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: true }
   else if Array.length s.previousAttempts == nAttempts - 1 then do
@@ -121,18 +144,18 @@ submitWord s =
     pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: false }
   else do
     -- Next attempt.
-    pure $ Guessing s { previousAttempts = s.currentAttempt : s.previousAttempts, currentAttempt = "", message = Nothing }
+    pure $ Guessing s { previousAttempts = s.currentAttempt : s.previousAttempts, currentAttempt = [], message = Nothing }
 
 handleKey :: String -> State -> Effect State
 handleKey key state = case state of
   Guessing s -> case keyToAction key of
-    Just Backspace -> pure $ Guessing s { currentAttempt = String.dropRight 1 s.currentAttempt }
+    Just Backspace -> pure $ Guessing s { currentAttempt = Array.dropEnd 1 s.currentAttempt }
     Just SubmitWord
       | currentAttemptComplete s -> submitWord s
     Just (InputLetter l)
       | not (currentAttemptComplete s) ->
         pure
-          $ Guessing s { currentAttempt = String.toString $ String.snoc (String.codePointFromChar l) s.currentAttempt }
+          $ Guessing s { currentAttempt = s.currentAttempt <> [ NotEvaluated l ] }
     _ -> pure state
   _ -> pure state
 
@@ -150,10 +173,10 @@ wordBlock letter =
     ]
     [ HH.text $ String.singleton letter ]
 
-wordRow :: forall a m. String -> GameHtml a m
+wordRow :: forall a m. Word -> GameHtml a m
 wordRow word =
   let
-    letters = String.toCharArray word
+    letters = Array.mapMaybe entryToChar word
 
     allBlocks = letters <> (Array.replicate (wordLength - Array.length letters) ' ')
   in
@@ -177,7 +200,9 @@ render state =
 
         guessRow = [ row [ wordRow s.currentAttempt ] ]
 
-        blankRows = map (\a -> row [ wordRow a ]) $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) ""
+        blankRows =
+          map (\a -> row [ wordRow a ])
+            $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) []
       in
         messageRow <> attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
     Finished s
