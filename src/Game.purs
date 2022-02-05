@@ -272,7 +272,7 @@ render state =
           map (\a -> row [ wordRow a ])
             $ Array.replicate (nAttempts - Array.length s.attempts) []
 
-        answerRow = [ row [ alert "primary" $ "The answer was '" <> s.answer <> ".'" ] ]
+        answerRow = [ row [ alert "primary" $ "The answer was '" <> s.answer <> "'." ] ]
       in
         messageRow <> attemptRows <> blankRows <> answerRow
     NoWords -> [ row [ alert "danger" "No words found." ] ]
