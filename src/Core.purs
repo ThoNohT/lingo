@@ -21,7 +21,7 @@ filterMaybe f a = case a of
     | f a' -> Just a'
   _ -> Nothing
 
-indexesOf :: Char -> String -> Array Int
-indexesOf ch str = case String.indexOf (Pattern $ String.singleton ch) str of
+indexesOf :: Int -> Char -> String -> Array Int
+indexesOf offset ch str = case String.indexOf (Pattern $ String.singleton ch) str of
   Nothing -> []
-  Just idx -> idx : indexesOf ch (String.drop (idx + 1) str)
+  Just idx -> (offset + idx) : indexesOf (offset + idx + 1) ch (String.drop (idx + 1) str)

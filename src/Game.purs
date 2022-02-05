@@ -104,7 +104,7 @@ validateWord answer =
   let
     validateLetter (Tuple index char) =
       let
-        indexes = indexesOf char answer
+        indexes = indexesOf 0 char answer
       in
         if elem index indexes then
           Correct char
