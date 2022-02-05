@@ -10,13 +10,13 @@ import Core (filterMaybe)
 import Data.Array as Array
 import Data.Char (fromCharCode, toCharCode)
 import Data.List (List(..), (!!), (..), (:))
-import Data.List (fromFoldable, length, mapMaybe) as List
+import Data.List (fromFoldable, length, mapMaybe, reverse) as List
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set (fromFoldable, member) as Set
 import Data.String (Pattern(..), toUpper)
 import Data.String (codePointFromChar) as String
-import Data.String.CodeUnits (dropRight, length, toChar) as String
+import Data.String.CodeUnits (dropRight, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
 import Data.String.NonEmpty (toString) as String
 import Data.String.NonEmpty.CodePoints (snoc) as String
@@ -34,7 +34,7 @@ nAttempts = 6
 
 {- The word length. -}
 wordLength :: Int
-wordLength = 5
+wordLength = 3
 
 buildDictionary :: String -> List String
 buildDictionary =
@@ -72,8 +72,8 @@ initialState dict = do
 
 Guessing invariants:
   - previousAttempts has max length of nAttempts - 1. Adding the last will immediately move to Finished.
-  - currentAttempt has max length of 5, adding more characters will not work.
-  - submitting a word only works when currentAttempt has length 5.
+  - currentAttempt has max length of wordLength, adding more characters will not work.
+  - submitting a word only works when currentAttempt has length wordLength.
 -}
 data State
   = Guessing GuessingState
@@ -91,7 +91,7 @@ type GuessingState
 
 {- Indicates whether the current attempt is ready to be submitted. -}
 currentAttemptComplete :: GuessingState -> Boolean
-currentAttemptComplete s = String.length s.currentAttempt == 5
+currentAttemptComplete s = String.length s.currentAttempt == wordLength
 
 type FinishedState
   = { attempts :: List String, answer :: String, success :: Boolean }
@@ -148,17 +148,42 @@ type GameHtml a m
   = H.ComponentHTML a () m
 
 row :: forall a m. Array (GameHtml a m) -> GameHtml a m
-row = HH.div [ HA.class_ $ ClassName "d-flex p-2 flex-fill justify-content-center" ]
+row = HH.div [ HA.class_ $ ClassName "d-flex p-1 flex-fill justify-content-center" ]
+
+wordBlock :: forall a m. Char -> GameHtml a m
+wordBlock letter =
+  HH.div
+    [ HA.class_ $ ClassName "border mx-2 text-center align-middle"
+    , HA.style "width: 50px; min-width: 50px; max-width: 50px; height: 50px; min-height: 50px; max-height: 50px"
+    ]
+    [ HH.text $ String.singleton letter ]
+
+wordRow :: forall a m. String -> GameHtml a m
+wordRow word =
+  let
+    letters = String.toCharArray word
+
+    allBlocks = letters <> (Array.replicate (wordLength - Array.length letters) ' ')
+  in
+    HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (map wordBlock allBlocks)
 
 render :: forall a m. State -> GameHtml a m
 render state =
-  HH.div [ HA.class_ $ ClassName "d-flex p-2 bd-highlight flex-fill flex-column" ]
+  HH.div
+    [ HA.class_ $ ClassName "d-flex p-2 bd-highlight flex-fill flex-column fs-2" ]
     ([ row [ HH.h1_ [ HH.text "LINGO" ] ] ] <> contents)
   where
   contents = case state of
     Guessing s ->
-      [ row [ HH.div_ [ HH.text s.currentAttempt ] ]
-      , row [ HH.div_ [ HH.text s.answer ] ]
-      ]
-    Finished _ -> [ row [ HH.text "Finished." ] ]
+      let
+        attemptRows = Array.fromFoldable $ map (\a -> row [ wordRow a ]) $ List.reverse s.previousAttempts
+
+        guessRow = [ row [ wordRow s.currentAttempt ] ]
+
+        blankRows = map (\a -> row [ wordRow a ]) $ Array.replicate (nAttempts - List.length s.previousAttempts - 1) ""
+      in
+        attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
+    Finished s
+      | s.success -> [ row [ HH.text "Success." ] ]
+    Finished _ -> [ row [ HH.text "Failed." ] ]
     NoWords -> [ row [ HH.text "No words found." ] ]
