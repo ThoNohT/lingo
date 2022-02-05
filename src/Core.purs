@@ -24,4 +24,4 @@ filterMaybe f a = case a of
 indexesOf :: Char -> String -> Array Int
 indexesOf ch str = case String.indexOf (Pattern $ String.singleton ch) str of
   Nothing -> []
-  Just idx -> idx : indexesOf ch (String.drop idx str)
+  Just idx -> idx : indexesOf ch (String.drop (idx + 1) str)

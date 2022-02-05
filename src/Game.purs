@@ -113,7 +113,7 @@ validateWord answer =
         else
           Incorrect char
   in
-    wordToString >>> String.toCharArray >>> zip (1 .. wordLength) >>> map validateLetter
+    wordToString >>> String.toCharArray >>> zip (0 .. wordLength) >>> map validateLetter
 
 -- TODO: Make previousAttempts a list of some type indicating whether it is correct, or wrong place, or incorrect.
 type GuessingState
