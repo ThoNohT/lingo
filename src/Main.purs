@@ -13,9 +13,9 @@ import Effect.Class (liftEffect)
 import Game as G
 import Halogen as H
 import Halogen.Aff (awaitBody, runHalogenAff)
+import Halogen.HTML (text) as HH
 import Halogen.Query.Event (eventListener)
 import Halogen.VDom.Driver (runUI)
-import Halogen.HTML (text) as HH
 import Web.Event.Event as E
 import Web.HTML (window) as Web
 import Web.HTML.HTMLDocument as HTMLDocument
@@ -61,9 +61,14 @@ handleAction action = do
       _ -> pure unit
     Loaded gameState -> case action of
       KeyPressed ev -> do
-        liftEffect $ E.preventDefault (KE.toEvent ev)
-        gameState' <- liftEffect $ G.handleKey (KE.key ev) gameState
-        ST.put $ Loaded gameState'
+        let
+          key = KE.key ev
+        if key /= "F5" && not (KE.shiftKey ev) && not (KE.ctrlKey ev) && not (KE.altKey ev) then do
+          liftEffect $ E.preventDefault (KE.toEvent ev)
+          gameState' <- liftEffect $ G.handleKey (KE.key ev) gameState
+          ST.put $ Loaded gameState'
+        else
+          pure unit
       _ -> pure unit
     Error _ -> pure unit
 
