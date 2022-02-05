@@ -1,6 +1,8 @@
 { name = "lingo"
 , dependencies =
   [ "affjax"
+  , "aff"
+  , "either"
   , "console"
   , "effect"
   , "halogen"

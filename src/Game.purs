@@ -13,10 +13,11 @@ import Data.List (List(..), (..), (:))
 import Data.List (length, mapMaybe) as List
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
-import Data.Set (empty, fromFoldable, member) as Set
+import Data.Set (fromFoldable, member) as Set
+import Data.String (Pattern(..), toUpper)
 import Data.String (codePointFromChar) as String
-import Data.String (toUpper)
 import Data.String.CodeUnits (dropRight, length, toChar) as String
+import Data.String.Common (split) as String
 import Data.String.NonEmpty (toString) as String
 import Data.String.NonEmpty.CodePoints (snoc) as String
 import Effect (Effect)
@@ -27,12 +28,12 @@ import Halogen.HTML as HH
 import Halogen.HTML.Properties as HA
 
 initialState :: String -> State
-initialState _ =
+initialState dict =
   Guessing
     { previousAttempts: Nil
     , currentAttempt: ""
     , answer: "LINGO"
-    , allWords: Set.empty
+    , allWords: Set.fromFoldable $ map toUpper $ map (String.dropRight 1) $ String.split (Pattern "\n") dict
     , message: Nothing
     , nAttempts: 6
     }
