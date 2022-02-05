@@ -257,7 +257,7 @@ render state =
           map (\a -> row [ wordRow a ])
             $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) []
       in
-        messageRow <> attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
+        messageRow <> attemptRows <> guessRow <> blankRows
     Finished s ->
       let
         messageRow =
