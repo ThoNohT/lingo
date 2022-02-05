@@ -1,10 +1,13 @@
 module Main (main) where
 
 import Prelude
+
 import Control.Monad.State as ST
+import Core (ignoreM)
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
+import Game as G
 import Halogen as H
 import Halogen.Aff (awaitBody, runHalogenAff)
 import Halogen.Query.Event (eventListener)
@@ -16,8 +19,6 @@ import Web.HTML.Window (document) as Web
 import Web.UIEvent.KeyboardEvent (KeyboardEvent)
 import Web.UIEvent.KeyboardEvent as KE
 import Web.UIEvent.KeyboardEvent.EventTypes as KET
-import Core (ignoreM)
-import Game as G
 
 -- Unused types.
 type Input
@@ -41,7 +42,9 @@ handleAction action = case action of
     ignoreM $ H.subscribe $ eventListener KET.keydown document (map KeyPressed <<< KE.fromEvent)
   KeyPressed ev -> do
     liftEffect $ E.preventDefault (KE.toEvent ev)
-    ST.modify_ (G.handleKey $ KE.key ev)
+    s <- ST.get
+    s' <- liftEffect $ G.handleKey (KE.key ev) s
+    ST.put s'
 
 component :: forall query m. MonadEffect m => H.Component query Input Output m
 component =

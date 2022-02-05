@@ -1,6 +1,19 @@
 { name = "lingo"
 , dependencies =
-  [ "aff", "console", "effect", "halogen", "prelude", "psci-support" ]
+  [ "effect"
+  , "console"
+  , "halogen"
+  , "prelude"
+  , "psci-support"
+  , "lists"
+  , "maybe"
+  , "ordered-collections"
+  , "strings"
+  , "transformers"
+  , "web-events"
+  , "web-html"
+  , "web-uievents"
+  ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]
 }
