@@ -2,9 +2,10 @@ module Game (State, handleKey, initialState, render) where
 
 import Prelude
 import Core (filterMaybe)
-import Data.Array (filter, length, fromFoldable, replicate, reverse, mapMaybe) as Array
 import Data.Array ((!!), (..), (:))
+import Data.Array (filter, length, fromFoldable, replicate, reverse, mapMaybe) as Array
 import Data.Char (fromCharCode, toCharCode)
+import Data.Foldable (elem)
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set (fromFoldable, member) as Set
@@ -15,7 +16,6 @@ import Data.String.Common (split) as String
 import Data.String.NonEmpty (toString) as String
 import Data.String.NonEmpty.CodePoints (snoc) as String
 import Effect (Effect)
-import Effect.Console as Console
 import Effect.Random as Random
 import Halogen as H
 import Halogen.HTML (ClassName(..))
@@ -109,19 +109,18 @@ submitWord :: GuessingState -> Effect State
 submitWord s =
   if not $ Set.member s.currentAttempt s.allWords then do
     -- Invalid word.
-    Console.log "Invalid word."
     pure $ Guessing s { currentAttempt = "", message = Just $ "'" <> s.currentAttempt <> "' is not a valid word." }
+  else if elem s.currentAttempt s.previousAttempts then do
+    -- Repeated guess.
+    pure $ Guessing s { currentAttempt = "", message = Just $ "'" <> s.currentAttempt <> "' has previously been guessed." }
   else if s.currentAttempt == s.answer then do
     -- Correct guess.
-    Console.log "Correct."
     pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: true }
   else if Array.length s.previousAttempts == nAttempts - 1 then do
     -- Game failed.
-    Console.log "Failed."
     pure $ Finished { attempts: s.currentAttempt : s.previousAttempts, answer: s.answer, success: false }
   else do
     -- Next attempt.
-    Console.log "Incorrect."
     pure $ Guessing s { previousAttempts = s.currentAttempt : s.previousAttempts, currentAttempt = "", message = Nothing }
 
 handleKey :: String -> State -> Effect State
