@@ -34,7 +34,7 @@ nAttempts = 6
 
 {- The word length. -}
 wordLength :: Int
-wordLength = 3
+wordLength = 5
 
 buildDictionary :: String -> List String
 buildDictionary =
@@ -167,6 +167,9 @@ wordRow word =
   in
     HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (map wordBlock allBlocks)
 
+alert :: forall a m. String -> String -> GameHtml a m
+alert alertType msg = HH.div [ HA.class_ $ ClassName $ "alert alert-" <> alertType ] [ HH.text msg ]
+
 render :: forall a m. State -> GameHtml a m
 render state =
   HH.div
@@ -176,14 +179,15 @@ render state =
   contents = case state of
     Guessing s ->
       let
+        messageRow = Array.fromFoldable $ map (\m -> row [ alert "warning" m ]) s.message
         attemptRows = Array.fromFoldable $ map (\a -> row [ wordRow a ]) $ List.reverse s.previousAttempts
 
         guessRow = [ row [ wordRow s.currentAttempt ] ]
 
         blankRows = map (\a -> row [ wordRow a ]) $ Array.replicate (nAttempts - List.length s.previousAttempts - 1) ""
       in
-        attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
+        messageRow <> attemptRows <> guessRow <> blankRows <> [ row [ HH.div_ [ HH.text s.answer ] ] ]
     Finished s
       | s.success -> [ row [ HH.text "Success." ] ]
     Finished _ -> [ row [ HH.text "Failed." ] ]
-    NoWords -> [ row [ HH.text "No words found." ] ]
+    NoWords -> [ row [ alert "danger" "No words found." ] ]
