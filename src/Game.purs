@@ -1,8 +1,8 @@
 module Game (State, handleKey, initialState, render) where
 
 import Prelude
-import Core (filterMaybe, groupAllWith)
-import Data.Array (concat, dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, singleton, sortWith) as Array
+import Core (filterMaybe, groupAllWith, padRight)
+import Data.Array (concat, dropEnd, filter, fromFoldable, length, mapMaybe, reverse, singleton, sortWith) as Array
 import Data.Array (zip, (!!), (..), (:))
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty (head, reverse, sortWith) as NEA
@@ -25,7 +25,7 @@ import Halogen.HTML.Properties as HA
 -- State.
 {- The number of attempts the user gets. -}
 nAttempts :: Int
-nAttempts = 9
+nAttempts = 6
 
 {- The word length. -}
 wordLength :: Int
@@ -73,9 +73,7 @@ buildDictionary =
 
 getRandomWord :: Array String -> Effect (Maybe String)
 getRandomWord words = do
-  let
-    max = Array.length words
-  idx <- Random.randomInt 0 max
+  idx <- Random.randomInt 0 $ Array.length words
   pure $ words !! idx
 
 initialState :: String -> Effect State
@@ -156,11 +154,11 @@ indexedFromTuple (Tuple idx a) = Indexed idx a
 
 {- Index a foldable by adding indexes to every element and returning it as an array. -}
 index :: forall f a. Foldable f => f a -> Array (Indexed a)
-index elems = map indexedFromTuple $ zip (0 .. length elems) $ Array.fromFoldable elems
+index elems = indexedFromTuple <$> zip (0 .. length elems) (Array.fromFoldable elems)
 
 {- Convert a foldable of Indexed elements to an array of elements in the ordering of their index. -}
 indexedToArray :: forall f a. Foldable f => Eq a => f (Indexed a) -> Array a
-indexedToArray elems = map (\(Indexed _ a) -> a) $ Array.sortWith (\(Indexed idx _) -> idx) $ Array.fromFoldable elems
+indexedToArray elems = (\(Indexed _ a) -> a) <$> Array.sortWith (\(Indexed idx _) -> idx) (Array.fromFoldable elems)
 
 {- Validation happens by going through all remaining letters in the input word in multiple passes, updating this state
 during every step. The answerLetters are removed once they are matched, unmatchedLetters are built up when letters from
@@ -186,7 +184,7 @@ validateWord answer word =
       if elem letter st.answerLetters then
         st
           { answerLetters = Set.delete letter st.answerLetters
-          , output = Set.insert (map Correct letter) st.output
+          , output = Set.insert (Correct <$> letter) st.output
           }
       else
         st { unmatchedLetters = letter : st.unmatchedLetters }
@@ -196,14 +194,14 @@ validateWord answer word =
       Just firstFoundLetter ->
         st
           { answerLetters = Set.delete firstFoundLetter st.answerLetters
-          , output = Set.insert (map WrongPlace letter) st.output
+          , output = Set.insert (WrongPlace <$> letter) st.output
           }
       Nothing -> st { unmatchedLetters = letter : st.unmatchedLetters }
   in
     indexedWord
       # foldl matchExact validationState
       # (\ns -> foldl matchNotExact (ns { unmatchedLetters = [] }) (Array.reverse ns.unmatchedLetters))
-      # (\ns -> Set.union ns.output (Set.fromFoldable $ map (map Incorrect) $ ns.unmatchedLetters))
+      # (\ns -> Set.union ns.output (Set.fromFoldable $ map Incorrect <$> ns.unmatchedLetters))
       # indexedToArray
 
 -- Update.
@@ -226,63 +224,45 @@ keyToAction key = case filterMaybe (flip Set.member letters) (String.toChar $ to
 
 {- Submits a word. Checks if the word is in the dictionary, if it was attempted before, if it was correct, and if it
 is the last attempt and changes the state accordingly. -}
-submitWord :: GuessingState -> Effect State
+submitWord :: GuessingState -> State
 submitWord s =
-  if not $ Set.member (wordToString s.currentAttempt) s.allWords then do
+  if not $ Set.member (wordToString s.currentAttempt) s.allWords then
     -- Invalid word.
-    pure
-      $ Guessing
-          s
-            { currentAttempt = []
-            , message = Just $ "'" <> wordToString s.currentAttempt <> "' is not a valid word."
-            }
-  else if elem s.currentAttempt s.previousAttempts then do
+    Guessing
+      s
+        { currentAttempt = []
+        , message = Just $ "'" <> wordToString s.currentAttempt <> "' is not a valid word."
+        }
+  else if elem s.currentAttempt s.previousAttempts then
     -- Repeated guess.
-    pure
-      $ Guessing
-          s
-            { currentAttempt = []
-            , message = Just $ "'" <> wordToString s.currentAttempt <> "' has previously been guessed."
-            }
-  else if wordToString s.currentAttempt == s.answer then do
+    Guessing
+      s
+        { currentAttempt = []
+        , message = Just $ "'" <> wordToString s.currentAttempt <> "' has previously been guessed."
+        }
+  else if wordToString s.currentAttempt == s.answer then
     -- Correct guess.
-    pure
-      $ Finished
-          { attempts: validateWord s.answer s.currentAttempt : s.previousAttempts
-          , answer: s.answer
-          , success: true
-          }
-  else if Array.length s.previousAttempts == nAttempts - 1 then do
+    Finished { attempts: newAttempts, answer: s.answer, success: true }
+  else if Array.length s.previousAttempts == nAttempts - 1 then
     -- Game failed.
-    pure
-      $ Finished
-          { attempts: validateWord s.answer s.currentAttempt : s.previousAttempts
-          , answer: s.answer
-          , success: false
-          }
-  else do
+    Finished { attempts: newAttempts, answer: s.answer, success: false }
+  else
     -- Next attempt.
-    pure
-      $ Guessing
-          s
-            { previousAttempts = validateWord s.answer s.currentAttempt : s.previousAttempts
-            , currentAttempt = []
-            , message = Nothing
-            }
+    Guessing s { previousAttempts = newAttempts, currentAttempt = [], message = Nothing }
+  where
+  newAttempts = validateWord s.answer s.currentAttempt : s.previousAttempts
 
 {- Handles a key and calls the correct update function. -}
-handleKey :: String -> State -> Effect State
+handleKey :: String -> State -> State
 handleKey key state = case state of
   Guessing s -> case keyToAction key of
-    Just Backspace -> pure $ Guessing s { currentAttempt = Array.dropEnd 1 s.currentAttempt }
+    Just Backspace -> Guessing s { currentAttempt = Array.dropEnd 1 s.currentAttempt }
     Just SubmitWord
       | currentAttemptComplete s -> submitWord s
     Just (InputLetter l)
-      | not (currentAttemptComplete s) ->
-        pure
-          $ Guessing s { currentAttempt = s.currentAttempt <> [ NotEvaluated l ] }
-    _ -> pure state
-  _ -> pure state
+      | not (currentAttemptComplete s) -> Guessing s { currentAttempt = s.currentAttempt <> [ NotEvaluated l ] }
+    _ -> state
+  _ -> state
 
 -- Rendering
 {- Alias for HTML for this game. -}
@@ -290,8 +270,8 @@ type GameHtml a m
   = H.ComponentHTML a () m
 
 {- Render a simple flexbox row. -}
-row :: forall a m. Array (GameHtml a m) -> GameHtml a m
-row = HH.div [ HA.class_ $ ClassName "d-flex p-1 flex-fill justify-content-center" ]
+row :: forall a m. GameHtml a m -> GameHtml a m
+row = Array.singleton >>> HH.div [ HA.class_ $ ClassName "d-flex p-1 flex-fill justify-content-center" ]
 
 {- Render a word block with all the information from an Entry. -}
 wordBlock :: forall a m. Entry -> GameHtml a m
@@ -315,11 +295,7 @@ wordBlock entry =
 
 {- Render a row of word blocks. -}
 wordRow :: forall a m. Word -> GameHtml a m
-wordRow word =
-  let
-    allBlocks = word <> (Array.replicate (wordLength - Array.length word) Empty)
-  in
-    HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (map wordBlock allBlocks)
+wordRow word = HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (wordBlock <$> padRight wordLength Empty word)
 
 {- Render an alert with the specified type and message. -}
 alert :: forall a m. String -> String -> GameHtml a m
@@ -336,44 +312,38 @@ keyboard words =
 
     blockRows = keyboardRows <#> String.toCharArray <#> (\l -> l <#> entryForLetter) <#> wordRow
   in
-    map (row <<< Array.singleton) blockRows
+    row <$> blockRows
 
 {- Main render function. -}
 render :: forall a m. State -> GameHtml a m
 render state =
   HH.div
     [ HA.class_ $ ClassName "d-flex p-2 bd-highlight flex-fill flex-column" ]
-    ([ row [ HH.h1_ [ HH.text "LINGO" ] ] ] <> contents)
+    ([ row $ HH.h1_ [ HH.text "LINGO" ] ] <> contents)
   where
   contents = case state of
     Guessing s ->
       let
-        messageRow = Array.fromFoldable $ map (\m -> row [ alert "warning" m ]) s.message
+        messageRow = Array.fromFoldable $ row <<< alert "warning" <$> s.message
 
-        attemptRows = map (\a -> row [ wordRow a ]) $ Array.reverse s.previousAttempts
-
-        guessRow = [ row [ wordRow s.currentAttempt ] ]
-
-        blankRows =
-          map (\a -> row [ wordRow a ])
-            $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) []
+        letterRows =
+          s.currentAttempt : s.previousAttempts
+            # Array.reverse
+            # padRight nAttempts []
+            <#> (row <<< wordRow)
       in
-        messageRow <> attemptRows <> guessRow <> blankRows <> keyboard s.previousAttempts
+        messageRow <> letterRows <> keyboard s.previousAttempts
     Finished s ->
       let
         messageRow =
           if s.success then
-            [ row [ alert "success" "Success!" ] ]
+            [ row $ alert "success" "Success!" ]
           else
-            [ row [ alert "danger" "Failed!" ] ]
+            [ row $ alert "danger" "Failed!" ]
 
-        attemptRows = map (\a -> row [ wordRow a ]) $ Array.reverse s.attempts
+        answerRow = [ row $ alert "primary" $ "The answer was '" <> s.answer <> "'." ]
 
-        blankRows =
-          map (\a -> row [ wordRow a ])
-            $ Array.replicate (nAttempts - Array.length s.attempts) []
-
-        answerRow = [ row [ alert "primary" $ "The answer was '" <> s.answer <> "'." ] ]
+        letterRows = s.attempts # Array.reverse # padRight nAttempts [] <#> row <<< wordRow
       in
-        messageRow <> answerRow <> attemptRows <> blankRows <> keyboard s.attempts
-    NoWords -> [ row [ alert "danger" "No words found." ] ]
+        messageRow <> answerRow <> letterRows <> keyboard s.attempts
+    NoWords -> [ row $ alert "danger" "No words found." ]

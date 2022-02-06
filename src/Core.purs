@@ -1,7 +1,7 @@
-module Core (filterMaybe, groupAllWith, ignore, ignoreM) where
+module Core (filterMaybe, groupAllWith, ignore, ignoreM, padRight) where
 
 import Prelude
-import Data.Array (groupAllBy) as Array
+import Data.Array (groupAllBy, length, replicate) as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Maybe (Maybe(..))
 
@@ -24,3 +24,7 @@ filterMaybe f a = case a of
 {- Group all elements in an array by checking if the elements mapped to an Ord instance are equal. -}
 groupAllWith :: forall a b. Ord b => (a -> b) -> Array a -> Array (NonEmptyArray a)
 groupAllWith f = Array.groupAllBy (\a b -> compare (f a) (f b))
+
+{- Pads an array with the specified element at the end, until it has reached the specified length. -}
+padRight :: forall a. Int -> a -> Array a -> Array a
+padRight width elem array = array <> Array.replicate (width - Array.length array) elem

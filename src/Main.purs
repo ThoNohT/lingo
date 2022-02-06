@@ -7,6 +7,8 @@ import Control.Monad.State as ST
 import Core (ignoreM)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
+import Data.String.Regex (test, regex) as Regex
+import Data.String.Regex.Flags (noFlags) as Regex
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
@@ -63,12 +65,16 @@ handleAction action = do
       KeyPressed ev -> do
         let
           key = KE.key ev
-        if key /= "F5" && not (KE.ctrlKey ev) && not (KE.altKey ev) then do
-          liftEffect $ E.preventDefault (KE.toEvent ev)
-          gameState' <- liftEffect $ G.handleKey (KE.key ev) gameState
-          ST.put $ Loaded gameState'
-        else
-          pure unit
+
+          regex' = Regex.regex "F\\d+" Regex.noFlags
+        case regex' of
+          Left _ -> pure unit
+          Right regex ->
+            if not (Regex.test regex key) && not (KE.ctrlKey ev) && not (KE.altKey ev) then do
+              liftEffect $ E.preventDefault (KE.toEvent ev)
+              ST.put $ Loaded $ G.handleKey key gameState
+            else
+              pure unit
       _ -> pure unit
     Error _ -> pure unit
 
