@@ -1,14 +1,14 @@
 module Game (State, handleKey, initialState, render) where
 
 import Prelude
-import Core (filterMaybe, indexesOf)
-import Data.Array (dropEnd, filter, fromFoldable, length, mapMaybe, null, replicate, reverse) as Array
+import Core (filterMaybe)
+import Data.Array (dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, sortWith) as Array
 import Data.Array (zip, (!!), (..), (:))
 import Data.Char (fromCharCode, toCharCode)
-import Data.Foldable (elem)
+import Data.Foldable (class Foldable, elem, find, foldl, length)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
-import Data.Set (fromFoldable, member) as Set
+import Data.Set (delete, empty, filter, fromFoldable, insert, member, union) as Set
 import Data.String (Pattern(..), toUpper)
 import Data.String.CodeUnits (dropRight, fromCharArray, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
@@ -81,6 +81,8 @@ data Entry
 
 derive instance eqEntry :: Eq Entry
 
+derive instance ordEntry :: Ord Entry
+
 {- Extract the character from an entry, if there is one. -}
 entryToChar :: Entry -> Maybe Char
 entryToChar entry = case entry of
@@ -98,22 +100,67 @@ type Word
 wordToString :: Word -> String
 wordToString = Array.mapMaybe entryToChar >>> String.fromCharArray
 
+data Indexed a
+  = Indexed Int a
+
+derive instance eqIndexed :: Eq a => Eq (Indexed a)
+
+derive instance ordIndexed :: Ord a => Ord (Indexed a)
+
+instance functorIndexed :: Functor Indexed where
+  map f (Indexed idx a) = Indexed idx $ f a
+
+{- Convert a tuple consisting of an Int an an element to an indexed of the element. -}
+indexedFromTuple :: forall a. Tuple Int a -> Indexed a
+indexedFromTuple (Tuple idx a) = Indexed idx a
+
+{- Index a foldable by adding indexes to every element and returning it as an array. -}
+index :: forall f a. Foldable f => f a -> Array (Indexed a)
+index elems = map indexedFromTuple $ zip (0 .. length elems) $ Array.fromFoldable elems
+
+{- Convert a foldable of Indexed elements to an array of elements in the ordering of their index. -}
+indexedToArray :: forall f a. Foldable f => Eq a => f (Indexed a) -> Array a
+indexedToArray elems = map (\(Indexed _ a) -> a) $ Array.sortWith (\(Indexed idx _) -> idx) $ Array.fromFoldable elems
+
+type ValidationState
+  = { answerLetters :: Set (Indexed Char), unmatchedLetters :: Array (Indexed Char), output :: Set (Indexed Entry) }
+
 {- Validates the provided word against the provided string. -}
 validateWord :: String -> Word -> Word
-validateWord answer =
+validateWord answer word =
   let
-    validateLetter (Tuple index char) =
-      let
-        indexes = indexesOf 0 char answer
-      in
-        if elem index indexes then
-          Correct char
-        else if not $ Array.null indexes then
-          WrongPlace char
+    indexedWord = index $ String.toCharArray $ wordToString word
+
+    validationState =
+      { answerLetters: Set.fromFoldable $ index $ String.toCharArray answer
+      , unmatchedLetters: []
+      , output: Set.empty
+      }
+
+    matchExact :: ValidationState -> Indexed Char -> ValidationState
+    matchExact st letter =
+      if elem letter st.answerLetters then
+        st
+          { answerLetters = Set.delete letter st.answerLetters
+          , output = Set.insert (map Correct letter) st.output
+          }
         else
-          Incorrect char
+        st { unmatchedLetters = letter : st.unmatchedLetters }
+
+    matchNotExact :: ValidationState -> Indexed Char -> ValidationState
+    matchNotExact st (letter@(Indexed _ char)) = case find (const true) $ Set.filter (\(Indexed _ l) -> l == char) st.answerLetters of
+      Just firstFoundLetter ->
+        st
+          { answerLetters = Set.delete firstFoundLetter st.answerLetters
+          , output = Set.insert (map WrongPlace letter) st.output
+          }
+      Nothing -> st { unmatchedLetters = letter : st.unmatchedLetters }
   in
-    wordToString >>> String.toCharArray >>> zip (0 .. wordLength) >>> map validateLetter
+    indexedWord
+      # foldl matchExact validationState
+      # (\ns -> foldl matchNotExact (ns { unmatchedLetters = [] }) (Array.reverse ns.unmatchedLetters))
+      # (\ns -> Set.union ns.output (Set.fromFoldable $ map (map Incorrect) $ ns.unmatchedLetters))
+      # indexedToArray
 
 type GuessingState
   = { previousAttempts :: Array Word
