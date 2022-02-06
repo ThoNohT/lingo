@@ -20,6 +20,7 @@ import Halogen.HTML (ClassName(..))
 import Halogen.HTML as HH
 import Halogen.HTML.Properties as HA
 
+-- State.
 {- The number of attempts the user gets. -}
 nAttempts :: Int
 nAttempts = 6
@@ -28,6 +29,36 @@ nAttempts = 6
 wordLength :: Int
 wordLength = 5
 
+{- The current state in the game.
+
+Guessing invariants:
+  - previousAttempts has max length of nAttempts - 1. Adding the last will immediately move to Finished.
+  - currentAttempt has max length of wordLength, adding more characters will not work.
+  - submitting a word only works when currentAttempt has length wordLength.
+-}
+data State
+  = Guessing GuessingState
+  | Finished FinishedState
+  | NoWords
+
+type GuessingState
+  = { previousAttempts :: Array Word
+    , currentAttempt :: Word
+    , answer :: String
+    , allWords :: Set String
+    , message :: Maybe String
+    }
+
+{- Indicates whether the current attempt is ready to be submitted. -}
+currentAttemptComplete :: GuessingState -> Boolean
+currentAttemptComplete s = Array.length s.currentAttempt == wordLength
+
+type FinishedState
+  = { attempts :: Array Word, answer :: String, success :: Boolean }
+
+-- Initialization
+{- Builds an array of words from a large string with words separated by newlines.
+Only the words with a length specified in wordLength are kept. -}
 buildDictionary :: String -> Array String
 buildDictionary =
   String.split (Pattern "\n")
@@ -59,18 +90,7 @@ initialState dict = do
             }
     Nothing -> pure NoWords
 
-{- The current state in the game.
-
-Guessing invariants:
-  - previousAttempts has max length of nAttempts - 1. Adding the last will immediately move to Finished.
-  - currentAttempt has max length of wordLength, adding more characters will not work.
-  - submitting a word only works when currentAttempt has length wordLength.
--}
-data State
-  = Guessing GuessingState
-  | Finished FinishedState
-  | NoWords
-
+-- Words.
 {- An entry in a word. -}
 data Entry
   = Correct Char
@@ -100,6 +120,8 @@ type Word
 wordToString :: Word -> String
 wordToString = Array.mapMaybe entryToChar >>> String.fromCharArray
 
+-- Validation.
+{- Adds an index to any type. -}
 data Indexed a
   = Indexed Int a
 
@@ -110,7 +132,7 @@ derive instance ordIndexed :: Ord a => Ord (Indexed a)
 instance functorIndexed :: Functor Indexed where
   map f (Indexed idx a) = Indexed idx $ f a
 
-{- Convert a tuple consisting of an Int an an element to an indexed of the element. -}
+{- Convert a tuple consisting of an Int an an element to an Indexed of the element. -}
 indexedFromTuple :: forall a. Tuple Int a -> Indexed a
 indexedFromTuple (Tuple idx a) = Indexed idx a
 
@@ -122,10 +144,14 @@ index elems = map indexedFromTuple $ zip (0 .. length elems) $ Array.fromFoldabl
 indexedToArray :: forall f a. Foldable f => Eq a => f (Indexed a) -> Array a
 indexedToArray elems = map (\(Indexed _ a) -> a) $ Array.sortWith (\(Indexed idx _) -> idx) $ Array.fromFoldable elems
 
+{- Validation happens by going through all remaining letters in the input word in multiple passes, updating this state
+during every step. The answerLetters are removed once they are matched, unmatchedLetters are built up when letters from
+the input word don't match anything, and the ouput contains the end result. -}
 type ValidationState
   = { answerLetters :: Set (Indexed Char), unmatchedLetters :: Array (Indexed Char), output :: Set (Indexed Entry) }
 
-{- Validates the provided word against the provided string. -}
+{- Validates the provided word against the provided string. First tries to match all exact letters, then the letters
+that are at an incorrect position, and then adds the remaining letters as incorrect. -}
 validateWord :: String -> Word -> Word
 validateWord answer word =
   let
@@ -162,21 +188,8 @@ validateWord answer word =
       # (\ns -> Set.union ns.output (Set.fromFoldable $ map (map Incorrect) $ ns.unmatchedLetters))
       # indexedToArray
 
-type GuessingState
-  = { previousAttempts :: Array Word
-    , currentAttempt :: Word
-    , answer :: String
-    , allWords :: Set String
-    , message :: Maybe String
-    }
-
-{- Indicates whether the current attempt is ready to be submitted. -}
-currentAttemptComplete :: GuessingState -> Boolean
-currentAttemptComplete s = Array.length s.currentAttempt == wordLength
-
-type FinishedState
-  = { attempts :: Array Word, answer :: String, success :: Boolean }
-
+-- Update.
+{- The different types of actions that can be performed in the game. -}
 data Action'
   = InputLetter Char
   | Backspace
@@ -193,6 +206,8 @@ keyToAction key = case filterMaybe (flip Set.member letters) (String.toChar $ to
   where
   letters = Set.fromFoldable $ Array.mapMaybe fromCharCode $ toCharCode 'A' .. toCharCode 'Z'
 
+{- Submits a word. Checks if the word is in the dictionary, if it was attempted before, if it was correct, and if it
+is the last attempt and changes the state accordingly. -}
 submitWord :: GuessingState -> Effect State
 submitWord s =
   if not $ Set.member (wordToString s.currentAttempt) s.allWords then do
@@ -237,6 +252,7 @@ submitWord s =
             , message = Nothing
             }
 
+{- Handles a key and calls the correct update function. -}
 handleKey :: String -> State -> Effect State
 handleKey key state = case state of
   Guessing s -> case keyToAction key of
@@ -250,12 +266,16 @@ handleKey key state = case state of
     _ -> pure state
   _ -> pure state
 
+-- Rendering
+{- Alias for HTML for this game. -}
 type GameHtml a m
   = H.ComponentHTML a () m
 
+{- Render a simple flexbox row. -}
 row :: forall a m. Array (GameHtml a m) -> GameHtml a m
 row = HH.div [ HA.class_ $ ClassName "d-flex p-1 flex-fill justify-content-center" ]
 
+{- Render a word block with all the information from an Entry. -}
 wordBlock :: forall a m. Entry -> GameHtml a m
 wordBlock entry =
   let
@@ -275,6 +295,7 @@ wordBlock entry =
       ]
       [ HH.text $ String.singleton letter ]
 
+{- Render a row of word blocks. -}
 wordRow :: forall a m. Word -> GameHtml a m
 wordRow word =
   let
@@ -282,9 +303,11 @@ wordRow word =
   in
     HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (map wordBlock allBlocks)
 
+{- Render an alert with the specified type and message. -}
 alert :: forall a m. String -> String -> GameHtml a m
 alert alertType msg = HH.div [ HA.class_ $ ClassName $ "alert alert-" <> alertType ] [ HH.text msg ]
 
+{- Main render function. -}
 render :: forall a m. State -> GameHtml a m
 render state =
   HH.div
