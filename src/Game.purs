@@ -12,7 +12,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Set (Set)
 import Data.Set (delete, empty, fromFoldable, insert, member, union) as Set
 import Data.String (Pattern(..), toUpper)
-import Data.String.CodeUnits (dropRight, fromCharArray, length, singleton, toChar, toCharArray) as String
+import Data.String.CodeUnits (fromCharArray, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -25,7 +25,7 @@ import Halogen.HTML.Properties as HA
 -- State.
 {- The number of attempts the user gets. -}
 nAttempts :: Int
-nAttempts = 6
+nAttempts = 9
 
 {- The word length. -}
 wordLength :: Int
@@ -68,7 +68,6 @@ Only the words with a length specified in wordLength are kept. -}
 buildDictionary :: String -> Array String
 buildDictionary =
   String.split (Pattern "\n")
-    >>> map (String.dropRight 1)
     >>> Array.filter (\w -> String.length w == wordLength)
     >>> map toUpper
 
