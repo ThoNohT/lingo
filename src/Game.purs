@@ -5,7 +5,7 @@ import Core (filterMaybe, groupAllWith)
 import Data.Array (concat, dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, singleton, sortWith) as Array
 import Data.Array (zip, (!!), (..), (:))
 import Data.Array.NonEmpty (NonEmptyArray)
-import Data.Array.NonEmpty (sortWith, head) as NEA
+import Data.Array.NonEmpty (head, reverse, sortWith) as NEA
 import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (class Foldable, elem, find, foldl, length)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
@@ -129,7 +129,7 @@ entryToChar entry = case entry of
 
 {- Returns the entry with the highest score. -}
 bestEntry :: NonEmptyArray Entry -> Entry
-bestEntry = NEA.sortWith entryScore >>> NEA.head
+bestEntry = NEA.sortWith entryScore >>> NEA.reverse >>> NEA.head
 
 {- A word in the list of guesses. -}
 type Word
@@ -358,10 +358,8 @@ render state =
         blankRows =
           map (\a -> row [ wordRow a ])
             $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) []
-
-        answerRow = [ row [ alert "primary" $ "The answer is '" <> s.answer <> "'." ] ]
       in
-        messageRow <> attemptRows <> guessRow <> blankRows <> answerRow <> keyboard s.previousAttempts
+        messageRow <> attemptRows <> guessRow <> blankRows <> keyboard s.previousAttempts
     Finished s ->
       let
         messageRow =
@@ -378,5 +376,5 @@ render state =
 
         answerRow = [ row [ alert "primary" $ "The answer was '" <> s.answer <> "'." ] ]
       in
-        messageRow <> attemptRows <> blankRows <> answerRow <> keyboard s.attempts
+        messageRow <> answerRow <> attemptRows <> blankRows <> keyboard s.attempts
     NoWords -> [ row [ alert "danger" "No words found." ] ]
