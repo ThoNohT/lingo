@@ -1,9 +1,11 @@
 module Game (State, handleKey, initialState, render) where
 
 import Prelude
-import Core (filterMaybe)
-import Data.Array (dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, sortWith) as Array
+import Core (filterMaybe, groupAllWith)
+import Data.Array (concat, dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, sortWith) as Array
 import Data.Array (zip, (!!), (..), (:))
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty (sortWith, head) as NEA
 import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (class Foldable, elem, find, foldl, length)
 import Data.Maybe (Maybe(..), maybe)
@@ -56,6 +58,10 @@ currentAttemptComplete s = Array.length s.currentAttempt == wordLength
 type FinishedState
   = { attempts :: Array Word, answer :: String, success :: Boolean }
 
+{- Checks an array of used words, and returns a set containing the best match for every letter in those words. -}
+usedWords :: Array Word -> Set Entry
+usedWords = Set.fromFoldable <<< map bestEntry <<< groupAllWith entryToChar <<< Array.concat
+
 -- Initialization
 {- Builds an array of words from a large string with words separated by newlines.
 Only the words with a length specified in wordLength are kept. -}
@@ -103,6 +109,15 @@ derive instance eqEntry :: Eq Entry
 
 derive instance ordEntry :: Ord Entry
 
+{- A score that can be used for getting the entry with the highest or lowest score. -}
+entryScore :: Entry -> Int
+entryScore e = case e of
+  (Correct _) -> 5
+  (WrongPlace _) -> 4
+  (Incorrect _) -> 3
+  (NotEvaluated _) -> 2
+  Empty -> 1
+
 {- Extract the character from an entry, if there is one. -}
 entryToChar :: Entry -> Maybe Char
 entryToChar entry = case entry of
@@ -111,6 +126,10 @@ entryToChar entry = case entry of
   Incorrect c -> Just c
   NotEvaluated c -> Just c
   Empty -> Nothing
+
+{- Returns the entry with the highest score. -}
+bestEntry :: NonEmptyArray Entry -> Entry
+bestEntry = NEA.sortWith entryScore >>> NEA.head
 
 {- A word in the list of guesses. -}
 type Word
