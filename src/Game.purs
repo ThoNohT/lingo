@@ -10,7 +10,7 @@ import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (class Foldable, elem, find, foldl, length)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Set (Set)
-import Data.Set (delete, empty, fromFoldable, insert, member, union) as Set
+import Data.Set (delete, empty, filter, fromFoldable, insert, member, union) as Set
 import Data.String (Pattern(..), toUpper)
 import Data.String.CodeUnits (fromCharArray, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
@@ -62,6 +62,14 @@ type FinishedState
 usedWords :: Array Word -> Set Entry
 usedWords = Set.fromFoldable <<< map bestEntry <<< groupAllWith entryToChar <<< Array.concat
 
+{- Checks an array of used words, and returns a set containing the indexed best match for every letter in those words. -}
+usedWordsIndexed :: Array Word -> Set (Indexed Entry)
+usedWordsIndexed =
+  Set.fromFoldable <<< map bestEntryIndexed
+    <<< groupAllWith (unIndex >>> entryToChar)
+    <<< Array.concat
+    <<< map index
+
 -- Initialization
 {- Builds an array of words from a large string with words separated by newlines.
 Only the words with a length specified in wordLength are kept. -}
@@ -101,6 +109,7 @@ data Entry
   | Incorrect Char
   | NotEvaluated Char
   | Empty
+  | EmptyPreview Char
 
 derive instance eqEntry :: Eq Entry
 
@@ -114,6 +123,7 @@ entryScore e = case e of
   (Incorrect _) -> 3
   (NotEvaluated _) -> 2
   Empty -> 1
+  EmptyPreview _ -> 1
 
 {- Extract the character from an entry, if there is one. -}
 entryToChar :: Entry -> Maybe Char
@@ -123,10 +133,15 @@ entryToChar entry = case entry of
   Incorrect c -> Just c
   NotEvaluated c -> Just c
   Empty -> Nothing
+  EmptyPreview c -> Just c
 
 {- Returns the entry with the highest score. -}
 bestEntry :: NonEmptyArray Entry -> Entry
 bestEntry = NEA.sortWith entryScore >>> NEA.reverse >>> NEA.head
+
+{- Returns the indexed entry with the highest score. -}
+bestEntryIndexed :: NonEmptyArray (Indexed Entry) -> Indexed Entry
+bestEntryIndexed = NEA.sortWith (unIndex >>> entryScore) >>> NEA.reverse >>> NEA.head
 
 {- A word in the list of guesses. -}
 type Word
@@ -158,7 +173,15 @@ index elems = indexedFromTuple <$> zip (0 .. length elems) (Array.fromFoldable e
 
 {- Convert a foldable of Indexed elements to an array of elements in the ordering of their index. -}
 indexedToArray :: forall f a. Foldable f => Eq a => f (Indexed a) -> Array a
-indexedToArray elems = (\(Indexed _ a) -> a) <$> Array.sortWith (\(Indexed idx _) -> idx) (Array.fromFoldable elems)
+indexedToArray elems = unIndex <$> Array.sortWith getIndex (Array.fromFoldable elems)
+
+{- Extracts a value from an Indexed. -}
+unIndex :: forall a. Indexed a -> a
+unIndex (Indexed _ a) = a
+
+{- Extracts the index from an Indexed. -}
+getIndex :: forall a. Indexed a -> Int
+getIndex (Indexed idx _) = idx
 
 {- Validation happens by going through all remaining letters in the input word in multiple passes, updating this state
 during every step. The answerLetters are removed once they are matched, unmatchedLetters are built up when letters from
@@ -279,23 +302,42 @@ wordBlock entry =
   let
     letter = maybe ' ' identity $ entryToChar entry
 
-    entryStyle = case entry of
+    entryBackground = case entry of
       Correct _ -> "green"
       WrongPlace _ -> "yellow"
       Incorrect _ -> "gray"
       _ -> "white"
+
+    entryForeground = case entry of
+      EmptyPreview _ -> "; color: lightgray"
+      _ -> ""
   in
     HH.div
       [ HA.class_ $ ClassName "border mx-2 text-center align-middle fs-2"
       , HA.style $ "width: 50px; min-width: 50px; max-width: 50px; "
           <> "height: 50px; min-height: 50px; max-height: 50px; background-color: "
-          <> entryStyle
+          <> entryBackground
+          <> entryForeground
       ]
       [ HH.text $ String.singleton letter ]
 
 {- Render a row of word blocks. -}
-wordRow :: forall a m. Word -> GameHtml a m
-wordRow word = HH.div [ HA.class_ $ ClassName "d-flex flex-row" ] (wordBlock <$> padRight wordLength Empty word)
+wordRow :: forall a m. Array Word -> Tuple Boolean Word -> GameHtml a m
+wordRow previousGuesses (Tuple preview word) =
+  let
+    correctGuesses = Set.filter (\(Indexed _ e) -> entryScore e == 5) $ usedWordsIndexed previousGuesses
+
+    previewEntry :: Indexed Entry -> Entry
+    previewEntry (Indexed idx e) = case Tuple e
+        (entryToChar =<< unIndex <$> find (\(Indexed idx' _) -> idx' == idx) correctGuesses) of
+      Tuple Empty (Just letter) -> EmptyPreview letter
+      _ -> e
+
+    makePreview :: Word -> Word
+    makePreview w = if preview then previewEntry <$> index w else w
+  in
+    HH.div [ HA.class_ $ ClassName "d-flex flex-row" ]
+      (wordBlock <$> (makePreview $ padRight wordLength Empty word))
 
 {- Render an alert with the specified type and message. -}
 alert :: forall a m. String -> String -> GameHtml a m
@@ -310,7 +352,7 @@ keyboard words =
 
     entryForLetter l = fromMaybe (NotEvaluated l) $ find (\entry -> entryToChar entry == Just l) guessEntries
 
-    blockRows = keyboardRows <#> String.toCharArray <#> (\l -> l <#> entryForLetter) <#> wordRow
+    blockRows = keyboardRows <#> String.toCharArray <#> (\l -> Tuple false (l <#> entryForLetter)) <#> wordRow []
   in
     row <$> blockRows
 
@@ -327,10 +369,10 @@ render state =
         messageRow = Array.fromFoldable $ row <<< alert "warning" <$> s.message
 
         letterRows =
-          s.currentAttempt : s.previousAttempts
+          (Tuple true s.currentAttempt) : (Tuple false <$> s.previousAttempts)
             # Array.reverse
-            # padRight nAttempts []
-            <#> (row <<< wordRow)
+            # padRight nAttempts (Tuple false [])
+            <#> (row <<< wordRow s.previousAttempts)
       in
         messageRow <> letterRows <> keyboard s.previousAttempts
     Finished s ->
@@ -343,7 +385,7 @@ render state =
 
         answerRow = [ row $ alert "primary" $ "The answer was '" <> s.answer <> "'." ]
 
-        letterRows = s.attempts # Array.reverse # padRight nAttempts [] <#> row <<< wordRow
+        letterRows = s.attempts # Array.reverse # padRight nAttempts [] <#> Tuple false <#> row <<< wordRow []
       in
         messageRow <> answerRow <> letterRows <> keyboard s.attempts
     NoWords -> [ row $ alert "danger" "No words found." ]
