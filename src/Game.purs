@@ -2,15 +2,15 @@ module Game (State, handleKey, initialState, render) where
 
 import Prelude
 import Core (filterMaybe, groupAllWith)
-import Data.Array (concat, dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, sortWith) as Array
+import Data.Array (concat, dropEnd, filter, fromFoldable, length, mapMaybe, replicate, reverse, singleton, sortWith) as Array
 import Data.Array (zip, (!!), (..), (:))
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty (sortWith, head) as NEA
 import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (class Foldable, elem, find, foldl, length)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Set (Set)
-import Data.Set (delete, empty, filter, fromFoldable, insert, member, union) as Set
+import Data.Set (delete, empty, fromFoldable, insert, member, union) as Set
 import Data.String (Pattern(..), toUpper)
 import Data.String.CodeUnits (dropRight, fromCharArray, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
@@ -189,11 +189,11 @@ validateWord answer word =
           { answerLetters = Set.delete letter st.answerLetters
           , output = Set.insert (map Correct letter) st.output
           }
-        else
+      else
         st { unmatchedLetters = letter : st.unmatchedLetters }
 
     matchNotExact :: ValidationState -> Indexed Char -> ValidationState
-    matchNotExact st (letter@(Indexed _ char)) = case find (const true) $ Set.filter (\(Indexed _ l) -> l == char) st.answerLetters of
+    matchNotExact st (letter@(Indexed _ char)) = case find (\(Indexed _ l) -> l == char) st.answerLetters of
       Just firstFoundLetter ->
         st
           { answerLetters = Set.delete firstFoundLetter st.answerLetters
@@ -326,6 +326,19 @@ wordRow word =
 alert :: forall a m. String -> String -> GameHtml a m
 alert alertType msg = HH.div [ HA.class_ $ ClassName $ "alert alert-" <> alertType ] [ HH.text msg ]
 
+keyboard :: forall a m. Array Word -> Array (GameHtml a m)
+keyboard words =
+  let
+    guessEntries = usedWords words
+
+    keyboardRows = [ "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" ]
+
+    entryForLetter l = fromMaybe (NotEvaluated l) $ find (\entry -> entryToChar entry == Just l) guessEntries
+
+    blockRows = keyboardRows <#> String.toCharArray <#> (\l -> l <#> entryForLetter) <#> wordRow
+  in
+    map (row <<< Array.singleton) blockRows
+
 {- Main render function. -}
 render :: forall a m. State -> GameHtml a m
 render state =
@@ -345,8 +358,10 @@ render state =
         blankRows =
           map (\a -> row [ wordRow a ])
             $ Array.replicate (nAttempts - Array.length s.previousAttempts - 1) []
+
+        answerRow = [ row [ alert "primary" $ "The answer is '" <> s.answer <> "'." ] ]
       in
-        messageRow <> attemptRows <> guessRow <> blankRows
+        messageRow <> attemptRows <> guessRow <> blankRows <> answerRow <> keyboard s.previousAttempts
     Finished s ->
       let
         messageRow =
@@ -363,5 +378,5 @@ render state =
 
         answerRow = [ row [ alert "primary" $ "The answer was '" <> s.answer <> "'." ] ]
       in
-        messageRow <> attemptRows <> blankRows <> answerRow
+        messageRow <> attemptRows <> blankRows <> answerRow <> keyboard s.attempts
     NoWords -> [ row [ alert "danger" "No words found." ] ]
