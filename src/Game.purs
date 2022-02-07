@@ -10,7 +10,7 @@ import Data.Char (fromCharCode, toCharCode)
 import Data.Foldable (class Foldable, elem, find, foldl, length)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Set (Set)
-import Data.Set (delete, empty, filter, fromFoldable, insert, member, union) as Set
+import Data.Set (delete, empty, fromFoldable, insert, member, union) as Set
 import Data.String (Pattern(..), toUpper)
 import Data.String.CodeUnits (fromCharArray, length, singleton, toChar, toCharArray) as String
 import Data.String.Common (split) as String
@@ -62,13 +62,10 @@ type FinishedState
 usedWords :: Array Word -> Set Entry
 usedWords = Set.fromFoldable <<< map bestEntry <<< groupAllWith entryToChar <<< Array.concat
 
-{- Checks an array of used words, and returns a set containing the indexed best match for every letter in those words. -}
-usedWordsIndexed :: Array Word -> Set (Indexed Entry)
-usedWordsIndexed =
-  Set.fromFoldable <<< map bestEntryIndexed
-    <<< groupAllWith (unIndex >>> entryToChar)
-    <<< Array.concat
-    <<< map index
+{- Checks an array of used words, a set containing all the correct letters indexed. -}
+correctLettersIndexed :: Array Word -> Set (Indexed Entry)
+correctLettersIndexed =
+  Set.fromFoldable <<< Array.filter (\(Indexed _ e) -> entryScore e == 5) <<< Array.concat <<< map index
 
 -- Initialization
 {- Builds an array of words from a large string with words separated by newlines.
@@ -138,10 +135,6 @@ entryToChar entry = case entry of
 {- Returns the entry with the highest score. -}
 bestEntry :: NonEmptyArray Entry -> Entry
 bestEntry = NEA.sortWith entryScore >>> NEA.reverse >>> NEA.head
-
-{- Returns the indexed entry with the highest score. -}
-bestEntryIndexed :: NonEmptyArray (Indexed Entry) -> Indexed Entry
-bestEntryIndexed = NEA.sortWith (unIndex >>> entryScore) >>> NEA.reverse >>> NEA.head
 
 {- A word in the list of guesses. -}
 type Word
@@ -325,7 +318,7 @@ wordBlock entry =
 wordRow :: forall a m. Array Word -> Tuple Boolean Word -> GameHtml a m
 wordRow previousGuesses (Tuple preview word) =
   let
-    correctGuesses = Set.filter (\(Indexed _ e) -> entryScore e == 5) $ usedWordsIndexed previousGuesses
+    correctGuesses = correctLettersIndexed previousGuesses
 
     previewEntry :: Indexed Entry -> Entry
     previewEntry (Indexed idx e) = case Tuple e
