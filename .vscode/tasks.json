@@ -4,7 +4,7 @@
         {
             "label": "Purescript Bundle Watch",
             "type": "shell",
-            "command": "spago bundle-app --to index.js --watch",
+            "command": "npx spago bundle-app --to index.js --watch",
             "group": "build",
             "problemMatcher": []
         }
