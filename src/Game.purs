@@ -314,9 +314,16 @@ wordBlock entry =
       ]
       [ HH.text $ String.singleton letter ]
 
+data WordModifier w
+  = Plain w
+  | Preview w
+  | Button w
+
+derive instance functorWordModifier :: Functor WordModifier
+
 {- Render a row of word blocks. -}
-wordRow :: forall a m. Array Word -> Tuple Boolean Word -> GameHtml a m
-wordRow previousGuesses (Tuple preview word) =
+wordRow :: forall a m. Array Word -> WordModifier Word -> GameHtml a m
+wordRow previousGuesses modifier =
   let
     correctGuesses = correctLettersIndexed previousGuesses
 
@@ -326,11 +333,13 @@ wordRow previousGuesses (Tuple preview word) =
       Tuple Empty (Just letter) -> EmptyPreview letter
       _ -> e
 
-    makePreview :: Word -> Word
-    makePreview w = if preview then previewEntry <$> index w else w
+    makePreview :: WordModifier Word -> WordModifier Word
+    makePreview (Preview w) = Plain $ previewEntry <$> index w
+    makePreview w = w
+
   in
     HH.div [ HA.class_ $ ClassName "d-flex flex-row" ]
-      (wordBlock <$> (makePreview $ padRight wordLength Empty word))
+      (wordBlock <$> (makePreview $ padRight wordLength Empty <$> modifier))
 
 {- Render an alert with the specified type and message. -}
 alert :: forall a m. String -> String -> GameHtml a m
